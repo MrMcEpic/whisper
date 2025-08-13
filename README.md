@@ -14,14 +14,32 @@ A powerful GUI and CLI tool for audio/video transcription using OpenAI Whisper w
 
 ## Installation
 
-1. Clone this repository:
+1. **Install FFmpeg** (required for video file processing):
+
+   **Windows** (using winget):
+   ```bash
+   winget install FFmpeg
+   ```
+   
+   **Linux** (using apt):
+   ```bash
+   sudo apt update
+   sudo apt install ffmpeg
+   ```
+   
+   **macOS** (using Homebrew):
+   ```bash
+   brew install ffmpeg
+   ```
+
+2. Clone this repository:
 
 ```bash
 git clone <repository-url>
 cd whisper-transcription-tool
 ```
 
-2. Create a virtual environment:
+3. Create a virtual environment:
 
 ```bash
 python -m venv whisper_env
@@ -31,7 +49,7 @@ whisper_env\Scripts\activate
 source whisper_env/bin/activate
 ```
 
-3. Install dependencies:
+4. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -39,7 +57,7 @@ pip install -r requirements.txt
 
    **Note for CUDA users**: If you want GPU acceleration, you may need to install PyTorch with CUDA support first. Visit [PyTorch Installation Guide](https://pytorch.org/get-started/locally/) to get the correct installation command for your CUDA version, then install the requirements.
 
-4. Set up speaker diarization (optional):
+5. Set up speaker diarization (optional):
    
    Follow the [pyannote speaker-diarization-3.1 setup instructions](https://huggingface.co/pyannote/speaker-diarization-3.1):
    - Accept user conditions for [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
