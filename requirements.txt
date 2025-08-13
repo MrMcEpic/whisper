@@ -1,0 +1,16 @@
+# Core dependencies
+openai-whisper==20250625
+pyannote.audio==3.3.2
+python-dotenv==1.1.1
+torch>=2.8.0
+torchaudio>=2.8.0
+
+# GUI dependencies (tkinter is built into Python)
+
+# Required by whisper and pyannote
+numpy
+tqdm
+requests
+PyYAML
+huggingface-hub
+soundfile

@@ -62,6 +62,7 @@ Thumbs.db
 
 # Output files
 *.txt
+!requirements.txt
 *.json
 
 # Temporary files
