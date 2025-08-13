@@ -34,26 +34,26 @@ A powerful GUI and CLI tool for audio/video transcription using OpenAI Whisper w
 
 2. Clone this repository:
 
-```bash
-git clone <repository-url>
-cd whisper-transcription-tool
-```
+   ```bash
+   git clone <repository-url>
+   cd whisper-transcription-tool
+   ```
 
 3. Create a virtual environment:
 
-```bash
-python -m venv whisper_env
-# Windows
-whisper_env\Scripts\activate
-# Linux/Mac
-source whisper_env/bin/activate
-```
+   ```bash
+   python -m venv whisper_env
+   # Windows
+   whisper_env\Scripts\activate
+   # Linux/Mac
+   source whisper_env/bin/activate
+   ```
 
 4. Install dependencies:
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
    **Note for CUDA users**: If you want GPU acceleration, you may need to install PyTorch with CUDA support first. Visit [PyTorch Installation Guide](https://pytorch.org/get-started/locally/) to get the correct installation command for your CUDA version, then install the requirements.
 
