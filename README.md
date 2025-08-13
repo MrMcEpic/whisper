@@ -137,4 +137,4 @@ The tool uses pyannote.audio for speaker diarization with:
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License
