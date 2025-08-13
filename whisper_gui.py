@@ -25,8 +25,15 @@ import sys
 import io
 import argparse
 from datetime import timedelta
-from pyannote.audio import Pipeline
 from dotenv import load_dotenv
+
+# Optional import for speaker diarization
+try:
+    from pyannote.audio import Pipeline
+    PYANNOTE_AVAILABLE = True
+except ImportError:
+    Pipeline = None
+    PYANNOTE_AVAILABLE = False
 
 load_dotenv()
 
@@ -264,7 +271,11 @@ class WhisperGUI:
                 self.current_model_name = self.model_var.get()
             
             if self.speaker_diarization_var.get():
-                if self.diarization_pipeline is None:
+                if not PYANNOTE_AVAILABLE:
+                    self.root.after(0, lambda: self.status_label.config(text="Speaker diarization unavailable (pyannote.audio not installed)", foreground="orange"))
+                    self.diarization_pipeline = False
+                    self.diarization_result = None
+                elif self.diarization_pipeline is None:
                     try:
                         self.root.after(0, lambda: self.status_label.config(text="Loading speaker diarization model...", foreground="blue"))
                         hf_token = os.getenv('TOKEN')
@@ -648,20 +659,24 @@ def run_cli(args):
     
     diarization_pipeline = None
     if args.speaker_diarization:
-        try:
-            print("Loading speaker diarization model...")
-            hf_token = os.getenv('TOKEN')
-            try:
-                diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1",
-                                                                use_auth_token=hf_token)
-            except Exception:
-                diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1",
-                                                                use_auth_token=True)
-            if torch.cuda.is_available():
-                diarization_pipeline = diarization_pipeline.to(torch.device("cuda"))
-        except Exception as e:
-            print(f"Warning: Speaker diarization unavailable: {e}")
+        if not PYANNOTE_AVAILABLE:
+            print("Warning: Speaker diarization unavailable (pyannote.audio not installed)")
             diarization_pipeline = None
+        else:
+            try:
+                print("Loading speaker diarization model...")
+                hf_token = os.getenv('TOKEN')
+                try:
+                    diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1",
+                                                                    use_auth_token=hf_token)
+                except Exception:
+                    diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1",
+                                                                    use_auth_token=True)
+                if torch.cuda.is_available():
+                    diarization_pipeline = diarization_pipeline.to(torch.device("cuda"))
+            except Exception as e:
+                print(f"Warning: Speaker diarization unavailable: {e}")
+                diarization_pipeline = None
     
     diarization_result = None
     if diarization_pipeline:
