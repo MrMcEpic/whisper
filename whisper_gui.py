@@ -37,15 +37,23 @@ except ImportError:
     Pipeline = None
     PYANNOTE_AVAILABLE = False
 
+# Optional import for translation
+try:
+    from googletrans import Translator
+    GOOGLETRANS_AVAILABLE = True
+except ImportError:
+    Translator = None
+    GOOGLETRANS_AVAILABLE = False
+
 load_dotenv()
 
 class WhisperGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Transcription Tool")
-        self.root.geometry("800x700")
+        self.root.geometry("950x700")
 
-        # Consistent app font (keeps widget sizes identical across themes)
+        # app font - keeps widget sizes consistent
         self.app_font = tkfont.Font(family='Segoe UI', size=10)
         
         self.model = None
@@ -54,6 +62,7 @@ class WhisperGUI:
         self.diarization_pipeline = None
         self.diarization_result = None
         self.temp_files = []  # Track temporary files for cleanup
+        self.translated_segments = {}  # Cache translated segments
         
         # Progress tracking
         self.progress_value = 0
@@ -89,7 +98,7 @@ class WhisperGUI:
     def apply_theme(self):
         """Apply the current theme (light or dark)"""
         if self.dark_mode.get():
-            # Modern dark mode colors (inspired by VS Code dark theme)
+            # dark theme colors
             bg_color = "#1e1e1e"           # Main background
             fg_color = "#cccccc"           # Main text
             entry_bg = "#3c3c3c"           # Input fields
@@ -124,7 +133,7 @@ class WhisperGUI:
                      background=[('active', button_hover), ('pressed', select_bg)],
                      relief=[('pressed', 'flat'), ('!pressed', 'flat')])
             
-            # Readonly file entry styling (more subtle)
+            # file entry readonly styling
             style.configure('Dark.Readonly.TEntry',
                           fieldbackground="#2a2a2a",  # Darker, more subtle
                           foreground="#999999",       # Grayed out text
@@ -177,7 +186,7 @@ class WhisperGUI:
                           lightcolor=button_bg,
                           darkcolor=button_bg)
 
-            # Indicator-less radiobutton style (uses text bullets for crisp look)
+            # radiobutton style without indicators
             style.layout('IndicatorLess.TRadiobutton', [
                 ('Radiobutton.padding', {
                     'children': [
@@ -215,12 +224,12 @@ class WhisperGUI:
                 self.result_vscroll.configure(style="Dark.Vertical.TScrollbar")
             
         else:
-            # Light mode with consistent metrics (use clam + custom colors)
+            # light mode using clam theme base
             bg_color = "#f5f5f5"
             fg_color = "#222222"
             entry_bg = "#ffffff"
             entry_fg = "#000000"
-            # neutral buttons (no bright blue)
+            # buttons with neutral colors
             button_bg = "#e1e1e1"
             button_fg = "#222222"
             button_hover = "#d6d6d6"
@@ -286,7 +295,7 @@ class WhisperGUI:
                       background=[('active', bg_color), ('selected', bg_color), ('disabled', bg_color)],
                       foreground=[('disabled', '#888888')])
 
-            # Progressbar (green in light mode)
+            # progressbar in green
             style.configure('TProgressbar',
                             background='#4caf50',
                             troughcolor='#e6e6e6',
@@ -308,7 +317,7 @@ class WhisperGUI:
             if hasattr(self, 'result_vscroll'):
                 self.result_vscroll.configure(style="Light.Vertical.TScrollbar")
 
-            # Indicator-less radiobutton style (same layout/colors as dark but light palette)
+            # radiobutton style without indicators
             style.layout('IndicatorLess.TRadiobutton', [
                 ('Radiobutton.padding', {
                     'children': [
@@ -411,7 +420,7 @@ class WhisperGUI:
                 'error': '#f85149'      # Light red for errors
             }
         else:
-            # Light mode colors (original)
+            # standard light mode colors
             colors = {
                 'info': 'blue',
                 'success': 'green', 
@@ -504,7 +513,7 @@ class WhisperGUI:
         models = ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "turbo"]
         self.model_radio_labels = {}
         for i, model in enumerate(models):
-            # indicator-less radiobutton for crisp look; we prepend a bullet in the text
+            # indicator-less radiobutton for crisp look with bullet in text
             rb = ttk.Radiobutton(
                 model_frame,
                 text=f"  {model}",
@@ -545,14 +554,14 @@ class WhisperGUI:
                                               variable=self.translate_var, command=self.toggle_translation)
         self.translate_check.grid(row=0, column=2, sticky=tk.W)
         
-        # Target language combobox (initially disabled)
+        # language selection combobox
         self.target_language_var = tk.StringVar(value="en")
         self.target_language_combo = ttk.Combobox(
             language_frame,
             textvariable=self.target_language_var,
-            values=common_languages[1:],
+            values=common_languages[1:],  # Exclude "auto" for target
             width=15,
-            state="disabled"  # Exclude "auto" for target
+            state="disabled"
         )
         self.target_language_combo.grid(row=0, column=3, sticky=tk.W, padx=(5, 0))
         
@@ -631,6 +640,15 @@ class WhisperGUI:
             style='App.TButton'
         )
         self.export_subtitle_btn.grid(row=0, column=3, padx=5)
+
+        self.export_translated_btn = ttk.Button(
+            button_frame,
+            text="Export Translated Subs",
+            command=self.export_translated_subtitles,
+            state="disabled",
+            style='App.TButton'
+        )
+        self.export_translated_btn.grid(row=0, column=4, padx=5)
         
         # Set initial dark mode button text based on current state
         initial_text = "☀️ Light Mode" if self.dark_mode.get() else "🌙 Dark Mode"
@@ -640,7 +658,7 @@ class WhisperGUI:
             command=self.toggle_dark_mode,
             style='App.TButton'
         )
-        self.dark_mode_btn.grid(row=0, column=4, padx=5)
+        self.dark_mode_btn.grid(row=0, column=5, padx=5)
         
         # Current task progress bar
         ttk.Label(main_frame, text="Current Task:", font=('Arial', 10)).grid(
@@ -793,12 +811,14 @@ class WhisperGUI:
         # Reset previous results and clean up any remaining temp files
         self.transcription_result = None
         self.diarization_result = None
+        self.translated_segments = {}  # Clear translation cache
         self.cleanup_temp_files()
         
         self.transcribe_btn.config(state="disabled")
         self.save_btn.config(state="disabled")
         self.format_btn.config(state="disabled")
         self.export_subtitle_btn.config(state="disabled")
+        self.export_translated_btn.config(state="disabled")
         self.progress['value'] = 0
         self.current_progress['value'] = 0
         self.set_status("Transcribing...", 'info')
@@ -828,7 +848,7 @@ class WhisperGUI:
                         self.root.after(0, lambda: self.set_status("Loading speaker diarization model...", 'info'))
                         hf_token = os.getenv('TOKEN')
                         
-                        # Try with token first, then fallback to True (uses huggingface-cli login)
+                        # try token first, fallback to huggingface-cli login
                         try:
                             self.diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization-3.1",
                                                                                 use_auth_token=hf_token)
@@ -853,7 +873,7 @@ class WhisperGUI:
                         # Convert file if needed for speaker diarization
                         diarization_file = self.convert_to_wav_for_diarization(file_path)
                         if diarization_file:
-                            # Use simulated progress for diarization since pyannote doesn't output progress by default
+                            # simulate diarization progress - pyannote has no built-in progress
                             import time
                             
                             def simulate_diarization_progress():
@@ -891,12 +911,12 @@ class WhisperGUI:
                                 self.update_progress(50)
                                 self.update_current_progress(100)
                                 self.root.after(0, lambda: self.set_status("Speaker diarization complete!", 'success'))
-                                time.sleep(0.5)  # Brief pause to show completion
+                                time.sleep(0.5)  # completion pause
                             except Exception as e:
                                 self._diarization_cancelled = True
                                 raise e
                             
-                            # Temporary file will be cleaned up automatically via self.temp_files tracking
+                            # temp file cleanup via self.temp_files tracking
                         else:
                             self.diarization_result = None
                             
@@ -907,7 +927,7 @@ class WhisperGUI:
             # Reset current progress for Whisper task
             self.update_current_progress(0)
             
-            # Capture progress by intercepting stderr (where tqdm outputs)
+            # capture progress by reading tqdm output from stderr
             class ProgressCapture:
                 def __init__(self, gui_ref):
                     self.gui_ref = gui_ref
@@ -924,13 +944,13 @@ class WhisperGUI:
                                 percentage = int(percentage_match.group(1))
                                 # Map Whisper progress based on whether diarization was used
                                 if self.gui_ref.speaker_diarization_var.get() and self.gui_ref.diarization_result:
-                                    # Map to 50-100% range (after diarization 0-50%)
+                                    # map to second half of progress bar
                                     mapped_percentage = 50 + int(percentage * 0.5)
                                 else:
                                     # Use full 0-100% range if no diarization
                                     mapped_percentage = percentage
                                 self.gui_ref.update_progress(mapped_percentage)
-                                # Update current task progress (always use full percentage for current task)
+                                # update progress for current task
                                 self.gui_ref.update_current_progress(percentage)
                                 # Update status with more detail
                                 if 'frames/s' in text:
@@ -967,7 +987,14 @@ class WhisperGUI:
                 
                 # Add translation task if enabled
                 if self.translate_var.get():
-                    transcribe_params["task"] = "translate"
+                    target_lang = self.target_language_var.get()
+                    if target_lang == "en":
+                        # Use Whisper's built-in translation to English
+                        transcribe_params["task"] = "translate"
+                    else:
+                        # For other languages, we'll transcribe normally and translate afterwards
+                        # The translation will happen in display_results
+                        pass
                 
                 result = self.model.transcribe(file_path, **transcribe_params)
             finally:
@@ -1007,15 +1034,15 @@ class WhisperGUI:
             elif timestamp > turn.end:
                 distance = timestamp - turn.end
             else:
-                distance = 0  # Should have been caught above, but just in case
+                distance = 0  # fallback distance
                 return speaker
             
             if distance < min_distance:
                 min_distance = distance
                 closest_speaker = speaker
         
-        # Conservative fallback: only assign if very close (≤ 0.8s)
-        # This handles small timing misalignments without being too aggressive
+        # only assign speaker if timestamp is very close
+        # handles timing misalignments
         if min_distance <= 0.8:
             return closest_speaker
         
@@ -1023,6 +1050,26 @@ class WhisperGUI:
     
     def display_results(self):
         self.result_text.delete(1.0, tk.END)
+        
+        # Check if we need to translate and haven't done so yet
+        if (self.translate_var.get() and 
+            self.target_language_var.get() != "en" and 
+            not self.translated_segments and
+            self.transcription_result and 
+            'segments' in self.transcription_result):
+            
+            # Start background translation
+            target_lang = self.target_language_var.get()
+            self.set_status(f"Starting translation to {target_lang}...", 'info')
+            
+            # Run translation in background thread
+            translation_thread = threading.Thread(
+                target=self.translate_segments_background, 
+                args=(target_lang,)
+            )
+            translation_thread.daemon = True
+            translation_thread.start()
+            return  # Exit early, will be called again when translation is done
         
         if self.clean_format_var.get():
             self.display_clean_format()
@@ -1032,6 +1079,12 @@ class WhisperGUI:
                 end_time = self.format_timestamp(segment['end'])
                 text = segment['text'].strip()
                 
+                # Use cached translation if available
+                if self.translate_var.get() and self.target_language_var.get() != "en":
+                    segment_key = f"{segment['start']}_{segment['end']}"
+                    if segment_key in self.translated_segments:
+                        text = self.translated_segments[segment_key]
+                
                 speaker = None
                 if self.speaker_diarization_var.get() and self.diarization_result:
                     speaker = self.get_speaker_at_time(segment['start'])
@@ -1040,20 +1093,54 @@ class WhisperGUI:
                 
                 if self.word_timestamps_var.get() and 'words' in segment:
                     self.result_text.insert(tk.END, f"[{start_time} - {end_time}] {speaker_prefix}\n")
-                    for word in segment['words']:
-                        word_start = self.format_timestamp(word['start'])
-                        word_end = self.format_timestamp(word['end'])
-                        word_text = word['word']
-                        word_speaker = None
-                        if self.speaker_diarization_var.get() and self.diarization_result:
-                            word_speaker = self.get_speaker_at_time(word['start'])
-                        word_speaker_prefix = f"[{word_speaker}] " if word_speaker is not None else ""
-                        self.result_text.insert(tk.END, f"  {word_start}-{word_end}: {word_speaker_prefix}{word_text}\n")
-                    self.result_text.insert(tk.END, f"Full segment: {speaker_prefix}{text}\n\n")
+                    
+                    # Check if we need to show translated words mapped to timings
+                    if (self.translate_var.get() and 
+                        self.target_language_var.get() != "en" and 
+                        segment_key in self.translated_segments):
+                        
+                        # Map translated words to original timings
+                        translated_text = self.translated_segments[segment_key]
+                        mapped_words = self.map_translated_words_to_timings(segment['words'], translated_text)
+                        
+                        for mapped_word in mapped_words:
+                            word_start = self.format_timestamp(mapped_word['start'])
+                            word_end = self.format_timestamp(mapped_word['end'])
+                            word_text = mapped_word['word']
+                            
+                            word_speaker = None
+                            if self.speaker_diarization_var.get() and self.diarization_result:
+                                word_speaker = self.get_speaker_at_time(mapped_word['start'])
+                            word_speaker_prefix = f"[{word_speaker}] " if word_speaker is not None else ""
+                            self.result_text.insert(tk.END, f"  {word_start}-{word_end}: {word_speaker_prefix}{word_text}\n")
+                            
+                        self.result_text.insert(tk.END, f"Full segment: {speaker_prefix}{text}\n\n")
+                    else:
+                        # Show original words with timestamps
+                        for word in segment['words']:
+                            word_start = self.format_timestamp(word['start'])
+                            word_end = self.format_timestamp(word['end'])
+                            word_text = word['word']
+                            
+                            word_speaker = None
+                            if self.speaker_diarization_var.get() and self.diarization_result:
+                                word_speaker = self.get_speaker_at_time(word['start'])
+                            word_speaker_prefix = f"[{word_speaker}] " if word_speaker is not None else ""
+                            self.result_text.insert(tk.END, f"  {word_start}-{word_end}: {word_speaker_prefix}{word_text}\n")
+                        
+                        # Show the full segment
+                        label = "Full segment"
+                        self.result_text.insert(tk.END, f"{label}: {speaker_prefix}{text}\n\n")
                 else:
                     self.result_text.insert(tk.END, f"[{start_time} - {end_time}] {speaker_prefix}{text}\n\n")
         else:
-            self.result_text.insert(tk.END, self.transcription_result['text'])
+            text = self.transcription_result['text']
+            # Use cached translation for full text if available
+            if self.translate_var.get() and self.target_language_var.get() != "en":
+                full_text_key = "full_text"
+                if full_text_key in self.translated_segments:
+                    text = self.translated_segments[full_text_key]
+            self.result_text.insert(tk.END, text)
         
         # Keep both progress bars at 100% for completion
         self.progress['value'] = 100
@@ -1063,6 +1150,7 @@ class WhisperGUI:
         self.save_btn.config(state="normal")
         self.format_btn.config(state="normal")
         self.export_subtitle_btn.config(state="normal")
+        self.export_translated_btn.config(state="normal")
     
     def handle_error(self, error_message):
         self.progress['value'] = 0
@@ -1110,6 +1198,12 @@ class WhisperGUI:
             end_time = self.format_timestamp(segment['end'])
             text = ' '.join(segment['text'].strip().split())
             
+            # Use cached translation if available
+            if self.translate_var.get() and self.target_language_var.get() != "en":
+                segment_key = f"{segment['start']}_{segment['end']}"
+                if segment_key in self.translated_segments:
+                    text = self.translated_segments[segment_key]
+            
             speaker = None
             if self.speaker_diarization_var.get() and self.diarization_result:
                 speaker = self.get_speaker_at_time(segment['start'])
@@ -1126,11 +1220,11 @@ class WhisperGUI:
         
         segments = []
         
-        # Check if this is clean format (checkbox was checked) or detailed format
+        # determine if using clean or detailed format
         is_clean_format = self.clean_format_var.get() or 'Full segment:' not in content
         
         if is_clean_format:
-            # For clean format, each line is a complete segment with timestamp and speaker
+            # clean format: segment with timestamp and speaker per line
             lines = content.strip().split('\n')
             for line in lines:
                 line = line.strip()
@@ -1291,6 +1385,329 @@ class WhisperGUI:
                 
                 f.write(f"{start_time} --> {end_time}\n")
                 f.write(f"{text}\n\n")
+    
+    def translate_text(self, text, target_lang='es'):
+        """Translate text using Google Translate (handles both sync and async versions)"""
+        if not GOOGLETRANS_AVAILABLE:
+            return text
+        
+        try:
+            import asyncio
+            
+            translator = Translator()
+            result = translator.translate(text, dest=target_lang)
+            
+            # check if translator returned a coroutine
+            if asyncio.iscoroutine(result):
+                # handle GUI context async execution
+                try:
+                    # Try nest_asyncio for GUI compatibility
+                    try:
+                        import nest_asyncio
+                        nest_asyncio.apply()
+                        loop = asyncio.get_event_loop()
+                        result = loop.run_until_complete(result)
+                    except ImportError:
+                        # fallback to running asyncio in separate thread
+                        import concurrent.futures
+                        import threading
+                        
+                        def run_async():
+                            return asyncio.run(result)
+                        
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(run_async)
+                            result = future.result(timeout=10)  # 10 second timeout
+                            
+                except Exception as async_error:
+                    print(f"Async translation failed: {async_error}")
+                    return text
+            
+            return result.text if hasattr(result, 'text') else str(result)
+                
+        except Exception as e:
+            print(f"Translation warning: {e}")
+            return text  # Return original text if translation fails
+    
+    def map_translated_words_to_timings(self, original_words, translated_text):
+        """Map translated text back to original word timings"""
+        if not translated_text or not original_words:
+            return []
+        
+        # Split translated text into words
+        translated_words = translated_text.strip().split()
+        
+        # If we have the same number of words, do 1:1 mapping
+        if len(translated_words) == len(original_words):
+            mapped_words = []
+            for i, orig_word in enumerate(original_words):
+                mapped_words.append({
+                    'start': orig_word['start'],
+                    'end': orig_word['end'],
+                    'word': translated_words[i],
+                    'original': orig_word['word']
+                })
+            return mapped_words
+        
+        # If different number of words, distribute proportionally
+        mapped_words = []
+        if len(translated_words) > 0:
+            total_duration = original_words[-1]['end'] - original_words[0]['start']
+            time_per_translated_word = total_duration / len(translated_words)
+            
+            start_time = original_words[0]['start']
+            for i, trans_word in enumerate(translated_words):
+                word_start = start_time + (i * time_per_translated_word)
+                word_end = start_time + ((i + 1) * time_per_translated_word)
+                
+                # Ensure we don't exceed the original segment end
+                if word_end > original_words[-1]['end']:
+                    word_end = original_words[-1]['end']
+                
+                mapped_words.append({
+                    'start': word_start,
+                    'end': word_end,
+                    'word': trans_word,
+                    'original': f"from {len(original_words)} orig words"
+                })
+        
+        return mapped_words
+    
+    def translate_segments_background(self, target_lang):
+        """Translate all segments in background thread"""
+        if not self.transcription_result or 'segments' not in self.transcription_result:
+            return
+        
+        try:
+            segments = self.transcription_result['segments']
+            total_segments = len(segments)
+            
+            # Also translate full text if available
+            if 'text' in self.transcription_result:
+                total_segments += 1
+            
+            self.root.after(0, lambda: self.set_status(f"Translating {total_segments} items to {target_lang}...", 'info'))
+            
+            current_item = 0
+            
+            # Translate full text first if available
+            if 'text' in self.transcription_result:
+                full_text = self.transcription_result['text']
+                translated_full_text = self.translate_text(full_text, target_lang)
+                self.translated_segments['full_text'] = translated_full_text
+                current_item += 1
+                progress = int((current_item / total_segments) * 100)
+                self.root.after(0, lambda p=progress: self.update_current_progress(p))
+            
+            for i, segment in enumerate(segments):
+                text = segment['text'].strip()
+                
+                # Update progress
+                current_item += 1
+                progress = int((current_item / total_segments) * 100)
+                self.root.after(0, lambda p=progress: self.update_current_progress(p))
+                
+                # translate entire segment for better context
+                translated_text = self.translate_text(text, target_lang)
+                
+                # Cache the translation
+                segment_key = f"{segment['start']}_{segment['end']}"
+                self.translated_segments[segment_key] = translated_text
+            
+            # Translation complete, update display
+            self.root.after(0, lambda: self.update_current_progress(100))
+            self.root.after(0, lambda: self.set_status("Translation complete! Updating display...", 'success'))
+            self.root.after(0, self.display_results)
+            
+        except Exception as e:
+            self.root.after(0, lambda: self.set_status(f"Translation error: {e}", 'error'))
+            self.root.after(0, self.display_results)  # Show without translation
+    
+    def export_translated_srt(self, filename, target_lang='es'):
+        """Export transcript as translated SRT subtitle file"""
+        if not GOOGLETRANS_AVAILABLE:
+            messagebox.showerror("Error", "Google Translate library not available. Please install googletrans.")
+            return
+            
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                for i, segment in enumerate(self.transcription_result['segments'], 1):
+                    start_time = self.format_subtitle_timestamp_srt(segment['start'])
+                    end_time = self.format_subtitle_timestamp_srt(segment['end'])
+                    text = segment['text'].strip()
+                    
+                    # Add speaker info if available
+                    speaker_prefix = ""
+                    if self.speaker_diarization_var.get() and self.diarization_result:
+                        speaker = self.get_speaker_at_time(segment['start'])
+                        if speaker:
+                            speaker_prefix = f"[{speaker}] "
+                    
+                    # Use cached translation if available for the same language, otherwise translate
+                    segment_key = f"{segment['start']}_{segment['end']}"
+                    if (segment_key in self.translated_segments and 
+                        target_lang == self.target_language_var.get() and 
+                        self.translate_var.get()):
+                        # reuse existing translation to avoid double-translating
+                        translated_text = self.translated_segments[segment_key]
+                    else:
+                        # Translate from original text
+                        translated_text = self.translate_text(text, target_lang)
+                    
+                    final_text = f"{speaker_prefix}{translated_text}"
+                    
+                    f.write(f"{i}\n")
+                    f.write(f"{start_time} --> {end_time}\n")
+                    f.write(f"{final_text}\n\n")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export translated SRT: {str(e)}")
+    
+    def export_translated_vtt(self, filename, target_lang='es'):
+        """Export transcript as translated WebVTT subtitle file"""
+        if not GOOGLETRANS_AVAILABLE:
+            messagebox.showerror("Error", "Google Translate library not available. Please install googletrans.")
+            return
+            
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write("WEBVTT\n\n")
+                
+                for segment in self.transcription_result['segments']:
+                    start_time = self.format_subtitle_timestamp_vtt(segment['start'])
+                    end_time = self.format_subtitle_timestamp_vtt(segment['end'])
+                    text = segment['text'].strip()
+                    
+                    # Add speaker info if available
+                    speaker_prefix = ""
+                    if self.speaker_diarization_var.get() and self.diarization_result:
+                        speaker = self.get_speaker_at_time(segment['start'])
+                        if speaker:
+                            speaker_prefix = f"[{speaker}] "
+                    
+                    # Use cached translation if available for the same language, otherwise translate
+                    segment_key = f"{segment['start']}_{segment['end']}"
+                    if (segment_key in self.translated_segments and 
+                        target_lang == self.target_language_var.get() and 
+                        self.translate_var.get()):
+                        # reuse existing translation to avoid double-translating
+                        translated_text = self.translated_segments[segment_key]
+                    else:
+                        # Translate from original text
+                        translated_text = self.translate_text(text, target_lang)
+                    
+                    final_text = f"{speaker_prefix}{translated_text}"
+                    
+                    f.write(f"{start_time} --> {end_time}\n")
+                    f.write(f"{final_text}\n\n")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export translated VTT: {str(e)}")
+    
+    def export_translated_subtitles(self):
+        """Export translated subtitles with language selection"""
+        if not self.transcription_result or 'segments' not in self.transcription_result:
+            messagebox.showerror("Error", "No transcript to export as translated subtitles.")
+            return
+        
+        if not GOOGLETRANS_AVAILABLE:
+            messagebox.showerror("Error", "Google Translate library not available. Please install googletrans.")
+            return
+        
+        # Create dialog for language and format selection
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Export Translated Subtitles")
+        dialog.geometry("400x200")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Apply theme to dialog
+        if self.dark_mode.get():
+            dialog.configure(bg="#1e1e1e")
+        else:
+            dialog.configure(bg="#f5f5f5")
+        
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Language selection
+        ttk.Label(main_frame, text="Target Language:").grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        
+        languages = {
+            "Spanish": "es", "French": "fr", "German": "de", "Italian": "it", 
+            "Portuguese": "pt", "Russian": "ru", "Japanese": "ja", "Korean": "ko",
+            "Chinese": "zh", "Arabic": "ar", "Hindi": "hi", "Dutch": "nl"
+        }
+        
+        # Set default to current translation language if available
+        default_lang = "Spanish"
+        if (self.translate_var.get() and 
+            self.target_language_var.get() != "en" and 
+            self.translated_segments):
+            current_lang_code = self.target_language_var.get()
+            for lang_name, lang_code in languages.items():
+                if lang_code == current_lang_code:
+                    default_lang = lang_name
+                    break
+        
+        lang_var = tk.StringVar(value=default_lang)
+        lang_combo = ttk.Combobox(main_frame, textvariable=lang_var, values=list(languages.keys()), 
+                                 state="readonly", width=15)
+        lang_combo.grid(row=0, column=1, sticky=tk.W, pady=(0, 10))
+        
+        # Format selection
+        ttk.Label(main_frame, text="Format:").grid(row=1, column=0, sticky=tk.W, pady=(0, 10))
+        
+        format_var = tk.StringVar(value="SRT")
+        format_combo = ttk.Combobox(main_frame, textvariable=format_var, values=["SRT", "WebVTT"], 
+                                   state="readonly", width=15)
+        format_combo.grid(row=1, column=1, sticky=tk.W, pady=(0, 10))
+        
+        # Show cache status
+        current_target = self.target_language_var.get() if self.translate_var.get() else None
+        cache_info = ""
+        if current_target and current_target != "en" and self.translated_segments:
+            cache_info = f"Note: Will use cached translation if same language ({current_target}) is selected."
+        else:
+            cache_info = "Note: Will translate from original text."
+        
+        info_label = ttk.Label(main_frame, text=cache_info, font=('Arial', 8))
+        info_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(5, 10))
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=(10, 0))
+        
+        def export_translated():
+            target_lang = languages[lang_var.get()]
+            format_type = format_var.get()
+            
+            # File dialog
+            if format_type == "SRT":
+                file_types = [("SRT files", "*.srt"), ("All files", "*.*")]
+                default_ext = ".srt"
+            else:
+                file_types = [("WebVTT files", "*.vtt"), ("All files", "*.*")]
+                default_ext = ".vtt"
+            
+            filename = filedialog.asksaveasfilename(
+                title=f"Export Translated {format_type} Subtitles",
+                defaultextension=default_ext,
+                filetypes=file_types
+            )
+            
+            if filename:
+                try:
+                    if format_type == "SRT":
+                        self.export_translated_srt(filename, target_lang)
+                    else:
+                        self.export_translated_vtt(filename, target_lang)
+                    
+                    messagebox.showinfo("Success", f"Translated {format_type} subtitles exported to {filename}")
+                    dialog.destroy()
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to export translated subtitles: {str(e)}")
+        
+        ttk.Button(button_frame, text="Export", command=export_translated, style='App.TButton').pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy, style='App.TButton').pack(side=tk.LEFT, padx=5)
 
 def run_cli(args):
     """Run transcription in CLI mode"""
@@ -1366,8 +1783,10 @@ def run_cli(args):
     if args.language and args.language != "auto":
         transcribe_params["language"] = args.language
     
-    # Add translation task if enabled
+    # add translation step if requested
     if args.translate:
+        if hasattr(args, 'target_language') and args.target_language != 'en':
+            print(f"Warning: Whisper only supports translation to English. Target language '{args.target_language}' will be ignored.")
         transcribe_params["task"] = "translate"
     
     result = model.transcribe(args.input, **transcribe_params)
@@ -1463,6 +1882,106 @@ def run_cli(args):
                 f.write(f"{start_time} --> {end_time}\n")
                 f.write(f"{text}\n\n")
     
+    def translate_text_cli(text, target_lang='es'):
+        """Translate text using Google Translate for CLI (handles both sync and async versions)"""
+        if not GOOGLETRANS_AVAILABLE:
+            return text
+        
+        try:
+            import asyncio
+            
+            translator = Translator()
+            result = translator.translate(text, dest=target_lang)
+            
+            # check if translator returned a coroutine
+            if asyncio.iscoroutine(result):
+                # CLI mode async execution
+                try:
+                    result = asyncio.run(result)
+                except RuntimeError as e:
+                    if "cannot be called from a running event loop" in str(e):
+                        # running event loop, use run_until_complete
+                        try:
+                            loop = asyncio.get_event_loop()
+                            result = loop.run_until_complete(result)
+                        except Exception:
+                            print(f"Translation skipped due to async limitation: {text[:50]}...")
+                            return text
+                    else:
+                        print(f"Translation error: {e}")
+                        return text
+            
+            return result.text if hasattr(result, 'text') else str(result)
+            
+        except Exception as e:
+            print(f"Translation warning: {e}")
+            return text  # Return original text if translation fails
+    
+    def export_translated_srt_cli(filename, result, diarization_result, speaker_diarization, target_lang='es'):
+        """Export translated SRT subtitle file in CLI mode"""
+        if not GOOGLETRANS_AVAILABLE:
+            print("Warning: Google Translate library not available. Please install googletrans.")
+            return False
+            
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                for i, segment in enumerate(result['segments'], 1):
+                    start_time = format_subtitle_timestamp_srt_cli(segment['start'])
+                    end_time = format_subtitle_timestamp_srt_cli(segment['end'])
+                    text = segment['text'].strip()
+                    
+                    # Add speaker info if available
+                    speaker_prefix = ""
+                    if speaker_diarization and diarization_result:
+                        speaker = get_speaker_at_time_cli(segment['start'])
+                        if speaker:
+                            speaker_prefix = f"[{speaker}] "
+                    
+                    # translate text content, skip speaker labels
+                    translated_text = translate_text_cli(text, target_lang)
+                    final_text = f"{speaker_prefix}{translated_text}"
+                    
+                    f.write(f"{i}\n")
+                    f.write(f"{start_time} --> {end_time}\n")
+                    f.write(f"{final_text}\n\n")
+            return True
+        except Exception as e:
+            print(f"Error exporting translated SRT: {e}")
+            return False
+    
+    def export_translated_vtt_cli(filename, result, diarization_result, speaker_diarization, target_lang='es'):
+        """Export translated WebVTT subtitle file in CLI mode"""
+        if not GOOGLETRANS_AVAILABLE:
+            print("Warning: Google Translate library not available. Please install googletrans.")
+            return False
+            
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write("WEBVTT\n\n")
+                
+                for segment in result['segments']:
+                    start_time = format_subtitle_timestamp_vtt_cli(segment['start'])
+                    end_time = format_subtitle_timestamp_vtt_cli(segment['end'])
+                    text = segment['text'].strip()
+                    
+                    # Add speaker info if available
+                    speaker_prefix = ""
+                    if speaker_diarization and diarization_result:
+                        speaker = get_speaker_at_time_cli(segment['start'])
+                        if speaker:
+                            speaker_prefix = f"[{speaker}] "
+                    
+                    # translate text content, skip speaker labels
+                    translated_text = translate_text_cli(text, target_lang)
+                    final_text = f"{speaker_prefix}{translated_text}"
+                    
+                    f.write(f"{start_time} --> {end_time}\n")
+                    f.write(f"{final_text}\n\n")
+            return True
+        except Exception as e:
+            print(f"Error exporting translated VTT: {e}")
+            return False
+    
     # Generate output
     output_lines = []
     
@@ -1513,6 +2032,25 @@ def run_cli(args):
             print(f"Error exporting VTT file: {e}")
             return 1
     
+    # Handle translated subtitle exports
+    if args.export_srt_translated:
+        print(f"\nTranslating SRT subtitles to {args.subtitle_language}...")
+        success = export_translated_srt_cli(args.export_srt_translated, result, diarization_result, 
+                                          args.speaker_diarization, args.subtitle_language)
+        if success:
+            print(f"Translated SRT subtitles exported to: {args.export_srt_translated}")
+        else:
+            return 1
+    
+    if args.export_vtt_translated:
+        print(f"\nTranslating WebVTT subtitles to {args.subtitle_language}...")
+        success = export_translated_vtt_cli(args.export_vtt_translated, result, diarization_result, 
+                                          args.speaker_diarization, args.subtitle_language)
+        if success:
+            print(f"Translated WebVTT subtitles exported to: {args.export_vtt_translated}")
+        else:
+            return 1
+    
     if args.output:
         try:
             with open(args.output, 'w', encoding='utf-8') as f:
@@ -1545,8 +2083,12 @@ def main():
     parser.add_argument('--clean-format', action='store_true', help='Use clean segment format only')
     parser.add_argument('--language', type=str, default='auto', help='Source language (auto for auto-detect)')
     parser.add_argument('--translate', action='store_true', help='Translate to English')
+    parser.add_argument('--target-language', type=str, default='en', help='Target language for translation (currently only "en" supported)')
     parser.add_argument('--export-srt', type=str, help='Export as SRT subtitle file to specified path')
     parser.add_argument('--export-vtt', type=str, help='Export as WebVTT subtitle file to specified path')
+    parser.add_argument('--export-srt-translated', type=str, help='Export as translated SRT subtitle file to specified path')
+    parser.add_argument('--export-vtt-translated', type=str, help='Export as translated WebVTT subtitle file to specified path')
+    parser.add_argument('--subtitle-language', type=str, default='es', help='Target language for subtitle translation (default: es for Spanish)')
     
     args = parser.parse_args()
     

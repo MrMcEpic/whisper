@@ -7,6 +7,10 @@ torchaudio>=2.8.0
 
 # GUI dependencies (tkinter is built into Python)
 
+# Translation dependencies (optional)
+googletrans==4.0.2
+nest-asyncio
+
 # Required by whisper and pyannote
 numpy
 tqdm
