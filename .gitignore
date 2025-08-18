@@ -59,6 +59,8 @@ Thumbs.db
 *.wav
 *.m4a
 *.flac
+*.srt
+*.vtt
 
 # Output files
 *.txt
