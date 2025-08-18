@@ -87,16 +87,47 @@ class WhisperGUI:
         model_frame = ttk.Frame(main_frame)
         model_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        models = ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3"]
+        models = ["tiny", "base", "small", "medium", "large", "large-v2", "large-v3", "turbo"]
         for i, model in enumerate(models):
             ttk.Radiobutton(model_frame, text=model, variable=self.model_var, 
                           value=model).grid(row=0, column=i, padx=5)
         
-        ttk.Label(main_frame, text="Options:", font=('Arial', 12, 'bold')).grid(
+        # Language Settings
+        ttk.Label(main_frame, text="Language Settings:", font=('Arial', 12, 'bold')).grid(
             row=4, column=0, sticky=tk.W, pady=(10, 5))
         
+        language_frame = ttk.Frame(main_frame)
+        language_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        # Common languages for the dropdown
+        common_languages = [
+            "auto", "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", 
+            "zh", "ar", "hi", "nl", "pl", "tr", "sv", "da", "no", "fi"
+        ]
+        
+        ttk.Label(language_frame, text="Source:").grid(row=0, column=0, sticky=tk.W)
+        self.source_language_var = tk.StringVar(value="auto")
+        self.source_language_combo = ttk.Combobox(language_frame, textvariable=self.source_language_var, 
+                                                 values=common_languages, width=15)
+        self.source_language_combo.grid(row=0, column=1, sticky=tk.W, padx=(5, 20))
+        
+        # Translation checkbox
+        self.translate_var = tk.BooleanVar(value=False)
+        self.translate_check = ttk.Checkbutton(language_frame, text="Translate to:", 
+                                              variable=self.translate_var, command=self.toggle_translation)
+        self.translate_check.grid(row=0, column=2, sticky=tk.W)
+        
+        # Target language combobox (initially disabled)
+        self.target_language_var = tk.StringVar(value="en")
+        self.target_language_combo = ttk.Combobox(language_frame, textvariable=self.target_language_var,
+                                                 values=common_languages[1:], width=15, state="disabled")  # Exclude "auto" for target
+        self.target_language_combo.grid(row=0, column=3, sticky=tk.W, padx=(5, 0))
+        
+        ttk.Label(main_frame, text="Options:", font=('Arial', 12, 'bold')).grid(
+            row=6, column=0, sticky=tk.W, pady=(10, 5))
+        
         options_frame = ttk.Frame(main_frame)
-        options_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        options_frame.grid(row=7, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
         self.timestamps_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(options_frame, text="Include timestamps", 
@@ -115,7 +146,7 @@ class WhisperGUI:
                        variable=self.clean_format_var).grid(row=1, column=1, sticky=tk.W, padx=(20, 0))
         
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=6, column=0, columnspan=2, pady=10)
+        button_frame.grid(row=8, column=0, columnspan=2, pady=10)
         
         self.transcribe_btn = ttk.Button(button_frame, text="Transcribe", 
                                        command=self.start_transcription)
@@ -131,28 +162,35 @@ class WhisperGUI:
         
         # Current task progress bar
         ttk.Label(main_frame, text="Current Task:", font=('Arial', 10)).grid(
-            row=7, column=0, sticky=tk.W, pady=(10, 2))
+            row=9, column=0, sticky=tk.W, pady=(10, 2))
         
         self.current_progress = ttk.Progressbar(main_frame, mode='determinate', maximum=100)
-        self.current_progress.grid(row=8, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 5))
+        self.current_progress.grid(row=10, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 5))
         
         # Overall progress bar  
         ttk.Label(main_frame, text="Overall Progress:", font=('Arial', 10)).grid(
-            row=9, column=0, sticky=tk.W, pady=(5, 2))
+            row=11, column=0, sticky=tk.W, pady=(5, 2))
         
         self.progress = ttk.Progressbar(main_frame, mode='determinate', maximum=100)
-        self.progress.grid(row=10, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        self.progress.grid(row=12, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
         self.status_label = ttk.Label(main_frame, text="Ready", foreground="green")
-        self.status_label.grid(row=11, column=0, columnspan=2, pady=(0, 10))
+        self.status_label.grid(row=13, column=0, columnspan=2, pady=(0, 10))
         
         ttk.Label(main_frame, text="Transcript:", font=('Arial', 12, 'bold')).grid(
-            row=12, column=0, sticky=tk.W, pady=(10, 5))
+            row=14, column=0, sticky=tk.W, pady=(10, 5))
         
         self.result_text = scrolledtext.ScrolledText(main_frame, height=20, wrap=tk.WORD)
-        self.result_text.grid(row=13, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        self.result_text.grid(row=15, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
-        main_frame.rowconfigure(13, weight=1)
+        main_frame.rowconfigure(15, weight=1)
+    
+    def toggle_translation(self):
+        """Enable/disable the target language combobox based on translation checkbox"""
+        if self.translate_var.get():
+            self.target_language_combo.config(state="normal")
+        else:
+            self.target_language_combo.config(state="disabled")
         
     def browse_file(self):
         file_types = [
@@ -408,11 +446,22 @@ class WhisperGUI:
             
             try:
                 sys.stderr = progress_capture
-                result = self.model.transcribe(
-                    file_path,
-                    word_timestamps=self.word_timestamps_var.get(),
-                    verbose=False
-                )
+                # Prepare transcription parameters
+                transcribe_params = {
+                    "word_timestamps": self.word_timestamps_var.get(),
+                    "verbose": False
+                }
+                
+                # Add language parameter if not auto-detect
+                source_lang = self.source_language_var.get()
+                if source_lang and source_lang != "auto":
+                    transcribe_params["language"] = source_lang
+                
+                # Add translation task if enabled
+                if self.translate_var.get():
+                    transcribe_params["task"] = "translate"
+                
+                result = self.model.transcribe(file_path, **transcribe_params)
             finally:
                 sys.stderr = original_stderr
             
@@ -711,11 +760,22 @@ def run_cli(args):
             diarization_result = None
     
     print("Processing audio...")
-    result = model.transcribe(
-        args.input,
-        word_timestamps=args.word_timestamps,
-        verbose=True  # Show progress in CLI mode
-    )
+    
+    # Prepare CLI transcription parameters
+    transcribe_params = {
+        "word_timestamps": args.word_timestamps,
+        "verbose": True  # Show progress in CLI mode
+    }
+    
+    # Add language parameter if not auto-detect
+    if args.language and args.language != "auto":
+        transcribe_params["language"] = args.language
+    
+    # Add translation task if enabled
+    if args.translate:
+        transcribe_params["task"] = "translate"
+    
+    result = model.transcribe(args.input, **transcribe_params)
     
     def get_speaker_at_time_cli(timestamp):
         if not diarization_result:
@@ -805,13 +865,15 @@ def main():
     parser.add_argument('--cli', action='store_true', help='Run in CLI mode')
     parser.add_argument('--input', type=str, help='Input audio/video file')
     parser.add_argument('--model', type=str, default='large-v3', 
-                       choices=['tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3'],
+                       choices=['tiny', 'base', 'small', 'medium', 'large', 'large-v2', 'large-v3', 'turbo'],
                        help='Whisper model to use')
     parser.add_argument('--output', type=str, help='Output file path')
     parser.add_argument('--no-timestamps', action='store_true', help='Disable timestamps')
     parser.add_argument('--no-word-timestamps', action='store_true', help='Disable word-level timestamps')
     parser.add_argument('--no-speaker-diarization', action='store_true', help='Disable speaker diarization')
     parser.add_argument('--clean-format', action='store_true', help='Use clean segment format only')
+    parser.add_argument('--language', type=str, default='auto', help='Source language (auto for auto-detect)')
+    parser.add_argument('--translate', action='store_true', help='Translate to English')
     
     args = parser.parse_args()
     
