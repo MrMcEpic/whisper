@@ -80,6 +80,18 @@ python whisper_gui.py
 python whisper_gui.py --cli --input "audio.mp3" --model "large-v3" --output "transcript.txt"
 ```
 
+**Export subtitles:**
+```bash
+# Export as SRT subtitles
+python whisper_gui.py --cli --input "video.mp4" --export-srt "subtitles.srt"
+
+# Export as WebVTT subtitles
+python whisper_gui.py --cli --input "video.mp4" --export-vtt "subtitles.vtt"
+
+# Export both transcript and subtitles
+python whisper_gui.py --cli --input "video.mp4" --output "transcript.txt" --export-srt "subtitles.srt"
+```
+
 #### CLI Options
 
 - `--cli`: Enable command-line mode
@@ -90,6 +102,10 @@ python whisper_gui.py --cli --input "audio.mp3" --model "large-v3" --output "tra
 - `--no-word-timestamps`: Disable word-level timestamps
 - `--no-speaker-diarization`: Disable speaker identification
 - `--clean-format`: Use clean segment format only
+- `--language`: Source language (auto for auto-detect)
+- `--translate`: Translate to English
+- `--export-srt`: Export as SRT subtitle file to specified path
+- `--export-vtt`: Export as WebVTT subtitle file to specified path
 
 ## GUI Features
 
@@ -128,6 +144,7 @@ The tool uses pyannote.audio for speaker diarization with:
 1. **Full Transcript**: Complete transcription with timestamps and speakers
 2. **Formatted Segments**: Clean segment format with timestamps and speaker labels
 3. **JSON Export**: Raw Whisper output with all metadata
+4. **Subtitle Export**: SRT and WebVTT subtitle files
 
 ## Troubleshooting
 

@@ -1406,6 +1406,63 @@ def run_cli(args):
     def format_timestamp_cli(seconds):
         return str(timedelta(seconds=int(seconds)))
     
+    def format_subtitle_timestamp_srt_cli(seconds):
+        """Format timestamp for SRT format: HH:MM:SS,mmm"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        seconds_remainder = seconds % 60
+        milliseconds = int((seconds_remainder - int(seconds_remainder)) * 1000)
+        seconds_int = int(seconds_remainder)
+        
+        return f"{hours:02d}:{minutes:02d}:{seconds_int:02d},{milliseconds:03d}"
+    
+    def format_subtitle_timestamp_vtt_cli(seconds):
+        """Format timestamp for VTT format: HH:MM:SS.mmm"""
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        seconds_remainder = seconds % 60
+        milliseconds = int((seconds_remainder - int(seconds_remainder)) * 1000)
+        seconds_int = int(seconds_remainder)
+        
+        return f"{hours:02d}:{minutes:02d}:{seconds_int:02d}.{milliseconds:03d}"
+    
+    def export_srt_cli(filename, result, diarization_result, speaker_diarization):
+        """Export transcript as SRT subtitle file in CLI mode"""
+        with open(filename, 'w', encoding='utf-8') as f:
+            for i, segment in enumerate(result['segments'], 1):
+                start_time = format_subtitle_timestamp_srt_cli(segment['start'])
+                end_time = format_subtitle_timestamp_srt_cli(segment['end'])
+                text = segment['text'].strip()
+                
+                # Add speaker info if available
+                if speaker_diarization and diarization_result:
+                    speaker = get_speaker_at_time_cli(segment['start'])
+                    if speaker:
+                        text = f"[{speaker}] {text}"
+                
+                f.write(f"{i}\n")
+                f.write(f"{start_time} --> {end_time}\n")
+                f.write(f"{text}\n\n")
+    
+    def export_vtt_cli(filename, result, diarization_result, speaker_diarization):
+        """Export transcript as WebVTT subtitle file in CLI mode"""
+        with open(filename, 'w', encoding='utf-8') as f:
+            f.write("WEBVTT\n\n")
+            
+            for segment in result['segments']:
+                start_time = format_subtitle_timestamp_vtt_cli(segment['start'])
+                end_time = format_subtitle_timestamp_vtt_cli(segment['end'])
+                text = segment['text'].strip()
+                
+                # Add speaker info if available
+                if speaker_diarization and diarization_result:
+                    speaker = get_speaker_at_time_cli(segment['start'])
+                    if speaker:
+                        text = f"[{speaker}] {text}"
+                
+                f.write(f"{start_time} --> {end_time}\n")
+                f.write(f"{text}\n\n")
+    
     # Generate output
     output_lines = []
     
@@ -1439,6 +1496,23 @@ def run_cli(args):
     # Output results
     output_text = '\n'.join(output_lines)
     
+    # Handle subtitle exports
+    if args.export_srt:
+        try:
+            export_srt_cli(args.export_srt, result, diarization_result, args.speaker_diarization)
+            print(f"\nSRT subtitles exported to: {args.export_srt}")
+        except Exception as e:
+            print(f"Error exporting SRT file: {e}")
+            return 1
+    
+    if args.export_vtt:
+        try:
+            export_vtt_cli(args.export_vtt, result, diarization_result, args.speaker_diarization)
+            print(f"\nWebVTT subtitles exported to: {args.export_vtt}")
+        except Exception as e:
+            print(f"Error exporting VTT file: {e}")
+            return 1
+    
     if args.output:
         try:
             with open(args.output, 'w', encoding='utf-8') as f:
@@ -1448,10 +1522,12 @@ def run_cli(args):
             print(f"Error saving file: {e}")
             return 1
     else:
-        print("\n" + "="*50)
-        print("TRANSCRIPT:")
-        print("="*50)
-        print(output_text)
+        # Only show transcript output if no subtitle exports were requested
+        if not args.export_srt and not args.export_vtt:
+            print("\n" + "="*50)
+            print("TRANSCRIPT:")
+            print("="*50)
+            print(output_text)
     
     return 0
 
@@ -1469,6 +1545,8 @@ def main():
     parser.add_argument('--clean-format', action='store_true', help='Use clean segment format only')
     parser.add_argument('--language', type=str, default='auto', help='Source language (auto for auto-detect)')
     parser.add_argument('--translate', action='store_true', help='Translate to English')
+    parser.add_argument('--export-srt', type=str, help='Export as SRT subtitle file to specified path')
+    parser.add_argument('--export-vtt', type=str, help='Export as WebVTT subtitle file to specified path')
     
     args = parser.parse_args()
     
